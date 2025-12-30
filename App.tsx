@@ -1,25 +1,28 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { WegMotorData } from './types';
+import { WegMotorData, DimensioningResult } from './types';
 import { WEG_MOTORS, getMotorByCv } from './motorData';
 import { calculateDimensioning, calculateGeneralSummary } from './calculations';
+import { GoogleGenAI } from "@google/genai";
 
 interface PageData {
   id: string;
-  type: 'report' | 'extra' | 'materials';
+  type: 'report' | 'materials' | 'summary';
   title: string;
-  content: any[]; // Para report/extra
-  text: string;   // Para materials/extra text
+  content: any[];
+  text: string;
 }
 
-const MotorImg = () => (
-  <svg width="50" height="50" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="50" y="70" width="100" height="80" rx="2" fill="#334155" />
-    <rect x="35" y="85" width="15" height="50" fill="#334155" />
-    <rect x="150" y="85" width="10" height="50" fill="#334155" />
-    <rect x="160" y="100" width="25" height="20" fill="#334155" />
-    <path d="M80 70V55H120V70" stroke="#334155" strokeWidth="6" strokeLinecap="round"/>
-    <rect x="85" y="110" width="30" height="10" fill="#cbd5e1" opacity="0.3" />
+const MotorIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-500">
+    <rect x="6" y="6" width="12" height="12" rx="2" />
+    <path d="M12 2v4M12 18v4M2 12h4M18 12h4M6 6l-2-2M18 6l2-2M6 18l-2 2M18 18l2 2" />
+  </svg>
+);
+
+const AIIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" strokeLinecap="round" strokeLinejoin="round"/>
   </svg>
 );
 
@@ -28,45 +31,60 @@ const App: React.FC = () => {
     { id: 'p1', type: 'report', title: 'LAUDO TÉCNICO', content: [{ id: 't1', type: 'text', value: '' }], text: '' }
   ]);
   const [headerImage, setHeaderImage] = useState<string | null>(null);
+  const [headerOffset, setHeaderOffset] = useState(15);
   const [isLocked, setIsLocked] = useState(false);
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResponse, setAiResponse] = useState<string | null>(null);
+  const [aiPrompt, setAiPrompt] = useState('');
+  
   const reportRef = useRef<HTMLDivElement>(null);
-
   const currentDate = new Date().toLocaleDateString('pt-BR');
 
   useEffect(() => {
-    const saved = localStorage.getItem('campo-forte-v4');
+    const saved = localStorage.getItem('campo-forte-v7');
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed.pages) setPages(parsed.pages);
       if (parsed.headerImage) setHeaderImage(parsed.headerImage);
+      if (parsed.headerOffset) setHeaderOffset(parsed.headerOffset);
     }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('campo-forte-v4', JSON.stringify({ pages, headerImage }));
-  }, [pages, headerImage]);
+    localStorage.setItem('campo-forte-v7', JSON.stringify({ pages, headerImage, headerOffset }));
+  }, [pages, headerImage, headerOffset]);
 
-  // Ações de Página
-  const addExtraPage = () => {
-    const newPage: PageData = {
-      id: Math.random().toString(36).substr(2, 9),
-      type: 'extra',
-      title: 'ANEXO TÉCNICO',
-      content: [],
-      text: ''
-    };
-    setPages([...pages, newPage]);
+  const callAI = async (promptType: 'audit' | 'text' | 'chat') => {
+    setAiLoading(true);
+    setAiPanelOpen(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const model = 'gemini-3-flash-preview';
+      const allMotors = pages.flatMap(p => p.content).filter(i => i.type === 'motor').map(i => getMotorByCv(parseFloat(i.value)));
+      const projectSummary = calculateGeneralSummary(allMotors.filter((m): m is WegMotorData => !!m));
+      let systemInstruction = `Você é o CAMPO FORTE AI, engenheiro eletricista sênior. Especialista em NBR 5410 e Motores WEG. Responda tecnicamente. Dados atuais: ${JSON.stringify(projectSummary)}.`;
+      let finalPrompt = aiPrompt;
+      if (promptType === 'audit') finalPrompt = "Realize auditoria técnica completa deste projeto baseada na NBR 5410.";
+      else if (promptType === 'text') finalPrompt = "Escreva uma introdução técnica para este laudo de motores.";
+      const response = await ai.models.generateContent({ model, contents: finalPrompt, config: { systemInstruction } });
+      setAiResponse(response.text || 'Sem resposta.');
+    } catch (error) {
+      setAiResponse("Erro na IA.");
+    } finally {
+      setAiLoading(false);
+    }
   };
 
-  const addMaterialsPage = () => {
-    const newPage: PageData = {
+  const addPage = (type: 'report' | 'materials' | 'summary') => {
+    const titles = { report: 'ANEXO TÉCNICO', materials: 'LISTA DE MATERIAIS', summary: 'RESUMO DE DIMENSIONAMENTO' };
+    setPages([...pages, {
       id: Math.random().toString(36).substr(2, 9),
-      type: 'materials',
-      title: 'LISTA DE MATERIAIS',
-      content: [],
+      type,
+      title: titles[type],
+      content: type === 'report' ? [{ id: Math.random().toString(36).substr(2, 9), type: 'text', value: '' }] : [],
       text: ''
-    };
-    setPages([...pages, newPage]);
+    }]);
   };
 
   const removePage = (id: string) => {
@@ -74,44 +92,19 @@ const App: React.FC = () => {
     setPages(pages.filter(p => p.id !== id));
   };
 
-  // Itens dentro das páginas
-  const addItemToPage = (pageId: string, type: 'text' | 'motor' | 'summary') => {
-    setPages(pages.map(p => {
-      if (p.id === pageId) {
-        const newItem = { id: Math.random().toString(36).substr(2, 9), type, value: type === 'motor' ? '1' : '' };
-        return { ...p, content: [...p.content, newItem] };
-      }
-      return p;
-    }));
+  const addItem = (pageId: string, type: 'text' | 'motor') => {
+    setPages(pages.map(p => p.id === pageId ? { ...p, content: [...p.content, { id: Math.random().toString(36).substr(2, 9), type, value: type === 'motor' ? '1' : '' }] } : p));
   };
 
   const updateItem = (pageId: string, itemId: string, value: string) => {
-    setPages(pages.map(p => {
-      if (p.id === pageId) {
-        return { ...p, content: p.content.map(i => i.id === itemId ? { ...i, value } : i) };
-      }
-      return p;
-    }));
+    setPages(pages.map(p => p.id === pageId ? { ...p, content: p.content.map(i => i.id === itemId ? { ...i, value } : i) } : p));
   };
 
-  const removeItem = (pageId: string, itemId: string) => {
-    setPages(pages.map(p => {
-      if (p.id === pageId) {
-        return { ...p, content: p.content.filter(i => i.id !== itemId) };
-      }
-      return p;
-    }));
+  const deleteItem = (pageId: string, itemId: string) => {
+    setPages(pages.map(p => p.id === pageId ? { ...p, content: p.content.filter(i => i.id !== itemId) } : p));
   };
 
-  const updatePageTitle = (id: string, title: string) => {
-    setPages(pages.map(p => p.id === id ? { ...p, title } : p));
-  };
-
-  const updatePageText = (id: string, text: string) => {
-    setPages(pages.map(p => p.id === id ? { ...p, text } : p));
-  };
-
-  const handleHeaderUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
@@ -120,228 +113,260 @@ const App: React.FC = () => {
     }
   };
 
-  const downloadAllPDF = async () => {
-    if (!reportRef.current) return;
+  const downloadFullProject = async () => {
     const { jsPDF } = (window as any).jspdf;
     const pdf = new jsPDF('p', 'mm', 'a4');
-    
     for (let i = 0; i < pages.length; i++) {
-      const element = document.getElementById(`page-${pages[i].id}`);
-      if (element) {
-        const canvas = await (window as any).html2canvas(element, { scale: 2, useCORS: true });
-        const imgData = canvas.toDataURL('image/png');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        
+      const el = document.getElementById(`page-${pages[i].id}`);
+      if (el) {
+        const canvas = await (window as any).html2canvas(el, { scale: 3, useCORS: true });
         if (i > 0) pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, 210, 297);
       }
     }
-    pdf.save(`CAMPO_FORTE_PROJETO_COMPLETO.pdf`);
+    pdf.save('CAMPO_FORTE_DOCUMENTO.pdf');
   };
-
-  const downloadSinglePage = async (pageId: string) => {
-    const element = document.getElementById(`page-${pageId}`);
-    if (!element) return;
-    const canvas = await (window as any).html2canvas(element, { scale: 2, useCORS: true });
-    const imgData = canvas.toDataURL('image/png');
-    const { jsPDF } = (window as any).jspdf;
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-    pdf.save(`CAMPO_FORTE_PAGINA.pdf`);
-  };
-
-  const PageLogo = () => (
-    <div className="flex justify-center w-full absolute top-[8mm] left-0 px-[20mm] z-50">
-      {headerImage ? (
-        <img src={headerImage} alt="Logo" className="max-h-[22mm] object-contain cursor-pointer" onClick={() => !isLocked && document.getElementById('logo-trigger')?.click()} />
-      ) : (
-        <div className="w-full h-12 border border-dashed border-slate-200 flex items-center justify-center text-[8px] text-slate-400 font-bold cursor-pointer no-print" onClick={() => document.getElementById('logo-trigger')?.click()}>CLIQUE PARA LOGOTIPO</div>
-      )}
-      <input id="logo-trigger" type="file" className="hidden" onChange={handleHeaderUpload} />
-    </div>
-  );
 
   return (
-    <div className="min-h-screen bg-slate-300 pb-20 font-sans">
-      {/* MENU SUPERIOR FIXO */}
-      <nav className="sticky top-0 z-[100] bg-slate-900 px-4 py-2 no-print flex items-center justify-between shadow-xl">
-        <div className="flex items-center gap-3">
-          <div className="bg-white text-slate-900 px-2 py-0.5 rounded font-black text-xs">CAMPO FORTE</div>
-          <div className="h-4 w-px bg-slate-700 mx-1"></div>
-          <button onClick={addExtraPage} className="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-sm text-[10px] font-bold uppercase transition">+ PÁGINA</button>
-          <button onClick={addMaterialsPage} className="bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-sm text-[10px] font-bold uppercase transition">+ LISTA</button>
+    <div className="min-h-screen bg-[#f3f2f1] font-sans flex flex-col items-center">
+      
+      {/* WORD STYLE RIBBON (TOP BAR) */}
+      <nav className="w-full sticky top-0 z-[100] bg-[#2b579a] text-white px-8 py-2 no-print flex items-center justify-between shadow-md">
+        <div className="flex items-center gap-8">
+          <div className="text-lg font-bold tracking-tight">CAMPO FORTE</div>
+          <div className="h-6 w-px bg-blue-400"></div>
+          <div className="flex gap-1">
+            <button onClick={() => addPage('report')} className="hover:bg-blue-600 px-3 py-1 rounded text-[11px] font-medium transition">Inserir Página</button>
+            <button onClick={() => addPage('materials')} className="hover:bg-blue-600 px-3 py-1 rounded text-[11px] font-medium transition">Lista Materiais</button>
+            <button onClick={() => addPage('summary')} className="hover:bg-blue-600 px-3 py-1 rounded text-[11px] font-medium transition">Resumo Técnico</button>
+          </div>
         </div>
-        
-        <div className="flex items-center gap-4">
-          <button onClick={() => setIsLocked(!isLocked)} className={`px-4 py-1.5 rounded-sm text-[10px] font-bold uppercase transition ${isLocked ? 'bg-red-600 text-white' : 'bg-slate-200 text-slate-900'}`}>
-            {isLocked ? 'MODO PDF' : 'EDITAR'}
+
+        <div className="flex items-center gap-6">
+          <button onClick={() => setAiPanelOpen(!aiPanelOpen)} className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-1 rounded text-[11px] font-bold transition">
+            <AIIcon /> Campo Forte AI
           </button>
-          <button onClick={downloadAllPDF} className="bg-white text-slate-900 px-5 py-1.5 rounded-sm text-[10px] font-bold uppercase transition font-black">BAIXAR PROJETO</button>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] uppercase opacity-70">Margem Topo</span>
+            <input type="range" min="5" max="60" value={headerOffset} onChange={(e) => setHeaderOffset(parseInt(e.target.value))} className="w-20 accent-white" />
+          </div>
+          <button onClick={() => setIsLocked(!isLocked)} className={`px-4 py-1 rounded text-[11px] font-bold transition ${isLocked ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-700'}`}>
+            {isLocked ? 'VISUALIZAÇÃO' : 'MODO EDIÇÃO'}
+          </button>
+          <button onClick={downloadFullProject} className="bg-white text-[#2b579a] px-5 py-1 rounded text-[11px] font-bold hover:bg-blue-50 transition shadow-sm">SALVAR PDF</button>
         </div>
       </nav>
 
-      <div ref={reportRef} className="max-w-[210mm] mx-auto mt-6 flex flex-col gap-6">
-        {pages.map((page, pIdx) => (
-          <div 
-            id={`page-${page.id}`} 
-            key={page.id} 
-            className="bg-white min-h-[297mm] p-[20mm] pt-[40mm] relative flex flex-col shadow-2xl overflow-hidden" 
-            style={{ fontFamily: "'Times New Roman', Times, serif" }}
-          >
-            <PageLogo />
+      {/* PAINEL LATERAL IA (STAY AS IS BUT CLEANER) */}
+      <div className={`fixed right-0 top-[44px] h-[calc(100%-44px)] w-[380px] bg-slate-900 shadow-2xl z-[200] transition-transform duration-300 transform no-print ${aiPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="p-6 h-full flex flex-col text-white">
+          <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
+            <div className="flex items-center gap-2">
+              <span className="font-bold uppercase tracking-widest text-sm text-blue-400">Inteligência Artificial</span>
+            </div>
+            <button onClick={() => setAiPanelOpen(false)} className="text-slate-400 hover:text-white text-xl">×</button>
+          </div>
+          <div className="flex-1 overflow-y-auto mb-4 bg-black/20 p-4 rounded text-xs leading-relaxed font-mono">
+            {aiResponse || "Aguardando comando..."}
+            {aiLoading && <div className="mt-2 text-blue-400 animate-pulse underline">Engenheiro IA analisando projeto...</div>}
+          </div>
+          <div className="space-y-2">
+            <button onClick={() => callAI('audit')} className="w-full bg-blue-600 hover:bg-blue-500 py-2 rounded text-[10px] font-bold uppercase tracking-wider">Auditoria NBR 5410</button>
+            <div className="flex gap-2">
+              <input type="text" placeholder="Pergunte à IA..." className="flex-1 bg-slate-800 border-none rounded p-2 text-xs focus:ring-1 focus:ring-blue-500" value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && callAI('chat')} />
+              <button onClick={() => callAI('chat')} className="bg-white text-black px-3 rounded">→</button>
+            </div>
+          </div>
+        </div>
+      </div>
 
-            {/* AÇÕES DA PÁGINA (SÓ UI) */}
-            {!isLocked && (
-              <div className="absolute top-4 right-4 flex gap-2 no-print">
-                <button onClick={() => downloadSinglePage(page.id)} className="bg-blue-50 text-blue-600 px-3 py-1 rounded text-[9px] font-bold border border-blue-100 hover:bg-blue-100 transition">BAIXAR ESTA PÁGINA</button>
-                {pIdx > 0 && (
-                  <button onClick={() => removePage(page.id)} className="bg-red-50 text-red-600 px-3 py-1 rounded text-[9px] font-bold border border-red-100 hover:bg-red-100 transition">REMOVER</button>
-                )}
-              </div>
-            )}
-
-            {/* TÍTULO DA PÁGINA */}
-            <header className="mb-8 w-full flex flex-col items-center">
-              <textarea 
-                className="w-full text-center text-4xl font-bold uppercase bg-transparent border-none focus:outline-none placeholder-slate-100 resize-none overflow-hidden" 
-                rows={1}
-                value={page.title} 
-                onChange={(e) => updatePageTitle(page.id, e.target.value)} 
-                disabled={isLocked}
-                onInput={(e) => {
-                  const target = e.target as HTMLTextAreaElement;
-                  target.style.height = 'auto';
-                  target.style.height = target.scrollHeight + 'px';
-                }}
-              />
-              <div className="w-1/4 h-1 bg-slate-900 mt-2"></div>
-            </header>
-
-            {/* CONTEÚDO DA PÁGINA */}
-            <div className="flex flex-col flex-1 gap-4">
+      {/* DOCUMENT VIEWPORT */}
+      <div className="w-full flex-1 overflow-y-auto py-10 flex flex-col items-center">
+        <div ref={reportRef} className="flex flex-col gap-10">
+          {pages.map((page, pIdx) => (
+            <div key={page.id} className="relative group">
               
-              {/* BOTÕES DE ADIÇÃO DENTRO DA PÁGINA (SÓ UI) */}
-              {page.type !== 'materials' && !isLocked && (
-                <div className="flex gap-2 mb-4 no-print border-b border-slate-50 pb-2">
-                  <button onClick={() => addItemToPage(page.id, 'text')} className="text-[9px] font-bold bg-slate-100 px-2 py-1 rounded hover:bg-slate-200">+ BLOCO TEXTO</button>
-                  <button onClick={() => addItemToPage(page.id, 'motor')} className="text-[9px] font-bold bg-slate-100 px-2 py-1 rounded hover:bg-slate-200">+ MOTOR</button>
-                  <button onClick={() => addItemToPage(page.id, 'summary')} className="text-[9px] font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">+ RESUMO DIMENS.</button>
+              {/* EXTERNAL BUTTONS (WORD-LIKE FLOATING) */}
+              {!isLocked && (
+                <div className="absolute -left-20 top-0 flex flex-col gap-2 no-print">
+                  <button onClick={() => addItem(page.id, 'text')} className="w-10 h-10 bg-white shadow-md border border-slate-200 rounded-full flex items-center justify-center hover:bg-blue-50 transition" title="Add Texto">T</button>
+                  <button onClick={() => addItem(page.id, 'motor')} className="w-10 h-10 bg-white shadow-md border border-slate-200 rounded-full flex items-center justify-center hover:bg-blue-50 transition" title="Add Motor">M</button>
+                  <button onClick={() => removePage(page.id)} className="w-10 h-10 bg-red-50 shadow-md border border-red-200 rounded-full flex items-center justify-center hover:bg-red-100 transition mt-4" title="Remover Folha">×</button>
                 </div>
               )}
 
-              {page.type === 'materials' ? (
-                <textarea 
-                  className="w-full flex-1 text-2xl leading-[1.8] bg-white resize-none focus:outline-none placeholder-slate-100 py-4 border-none overflow-hidden"
-                  placeholder="Relacione os materiais aqui..."
-                  value={page.text}
-                  onChange={(e) => updatePageText(page.id, e.target.value)}
-                  disabled={isLocked}
-                  onInput={(e) => {
-                    const target = e.target as HTMLTextAreaElement;
-                    target.style.height = 'auto';
-                    target.style.height = target.scrollHeight + 'px';
-                  }}
-                />
-              ) : (
-                page.content.map((item) => {
-                  if (item.type === 'text') {
-                    return (
-                      <div key={item.id} className="relative group">
-                        <textarea 
-                          className="w-full text-xl leading-[1.6] text-justify bg-white resize-none focus:outline-none placeholder-slate-100 p-0 border-none overflow-hidden" 
-                          placeholder="Digite aqui..." 
-                          rows={1} 
-                          value={item.value} 
-                          onChange={(e) => updateItem(page.id, item.id, e.target.value)} 
-                          disabled={isLocked} 
-                          onInput={(e) => {
-                            const target = e.target as HTMLTextAreaElement;
-                            target.style.height = 'auto';
-                            target.style.height = target.scrollHeight + 'px';
-                          }} 
-                        />
-                        {!isLocked && <button onClick={() => removeItem(page.id, item.id)} className="absolute -left-10 top-0 opacity-0 group-hover:opacity-100 text-red-400 no-print text-2xl">×</button>}
-                      </div>
-                    );
-                  } else if (item.type === 'motor') {
-                    return (
-                      <div key={item.id} className="relative group w-full flex justify-start my-2">
-                        {!isLocked && <button onClick={() => removeItem(page.id, item.id)} className="absolute -left-10 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-red-400 no-print text-2xl">×</button>}
-                        <div className="flex items-center gap-6 p-4 border border-slate-100 bg-slate-50 rounded-sm w-fit min-w-[320px]">
-                          <MotorImg />
-                          <div className="flex flex-col">
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Equipamento</span>
-                            {!isLocked ? (
-                              <select className="text-2xl font-black bg-transparent border-none focus:outline-none cursor-pointer" value={item.value} onChange={(e) => updateItem(page.id, item.id, e.target.value)}>
-                                {WEG_MOTORS.map(m => <option key={m.cv} value={m.cv}>{m.cv} CV - Trifásico</option>)}
-                              </select>
-                            ) : (
-                              <span className="text-2xl font-black">{item.value} CV - Trifásico</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  } else if (item.type === 'summary') {
-                    // Coleta todos os motores de TODAS as páginas para o resumo (ou só desta página?)
-                    // Geralmente o resumo é do projeto todo. Vamos filtrar motores de todas as páginas:
-                    const allMotors = pages.flatMap(p => p.content)
-                      .filter(i => i.type === 'motor')
-                      .map(i => getMotorByCv(parseFloat(i.value)))
-                      .filter((m): m is WegMotorData => !!m);
-                    const summary = calculateGeneralSummary(allMotors);
+              {/* THE WHITE PAPER A4 PAGE */}
+              <div 
+                id={`page-${page.id}`} 
+                className="bg-white w-[210mm] min-h-[297mm] shadow-[0_0_15px_rgba(0,0,0,0.15)] relative flex flex-col overflow-hidden text-left border border-slate-200"
+                style={{ padding: `25mm` }}
+              >
+                {/* Header (Word Header Style) */}
+                <div className="flex flex-col items-start w-full" style={{ marginTop: `${headerOffset}mm` }}>
+                  <div className="w-full flex justify-between items-end mb-6">
+                    <div className="h-[20mm] w-[50mm] flex items-center overflow-hidden">
+                      {headerImage ? (
+                        <img src={headerImage} alt="Logo" className="max-h-full max-w-full object-contain cursor-pointer" onClick={() => !isLocked && document.getElementById(`logo-${page.id}`)?.click()} />
+                      ) : (
+                        <div className="w-full h-full border border-dashed border-slate-300 flex items-center justify-center text-[9px] text-slate-300 font-bold cursor-pointer no-print" onClick={() => document.getElementById(`logo-${page.id}`)?.click()}>CLIQUE PARA LOGO</div>
+                      )}
+                      <input id={`logo-${page.id}`} type="file" className="hidden" onChange={handleLogoUpload} />
+                    </div>
+                    <div className="text-right border-b border-slate-100 pb-1">
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-tighter">Documento Gerado em {currentDate}</span>
+                    </div>
+                  </div>
+                  <textarea 
+                    className="w-full text-left text-3xl font-bold uppercase bg-transparent border-none focus:outline-none placeholder-slate-200 resize-none overflow-hidden leading-tight text-slate-800" 
+                    rows={1} value={page.title} 
+                    onChange={(e) => setPages(pages.map(p => p.id === page.id ? { ...p, title: e.target.value } : p))}
+                    onInput={(e) => { (e.target as any).style.height = 'auto'; (e.target as any).style.height = (e.target as any).scrollHeight + 'px'; }}
+                    disabled={isLocked}
+                  />
+                  <div className="w-16 h-1 bg-slate-800 mt-2"></div>
+                </div>
 
-                    return (
-                      <div key={item.id} className="relative group w-full my-6">
-                        {!isLocked && <button onClick={() => removeItem(page.id, item.id)} className="absolute -left-10 top-0 opacity-0 group-hover:opacity-100 text-red-400 no-print text-2xl">×</button>}
-                        <div className="border-t-4 border-b-4 border-slate-900 py-8 px-4 flex flex-col gap-6">
-                          <h3 className="text-2xl font-bold uppercase tracking-widest border-b border-slate-100 pb-2">Quadro de Dimensionamento ({summary.motorCount} Motores)</h3>
-                          <div className="flex flex-col gap-3">
-                            {allMotors.map((m, idx) => {
-                              const dim = calculateDimensioning(m);
+                {/* Body Content */}
+                <div className="mt-12 flex flex-col gap-6 flex-1 text-slate-700">
+                  {page.type === 'report' && page.content.map(item => (
+                    <div key={item.id} className="relative group/item w-full">
+                      {!isLocked && <button onClick={() => deleteItem(page.id, item.id)} className="absolute -left-8 top-1 opacity-0 group-hover/item:opacity-100 text-red-300 text-xl no-print">×</button>}
+                      {item.type === 'text' ? (
+                        <textarea 
+                          className="w-full text-[12pt] leading-[1.6] text-justify bg-transparent border-none focus:outline-none placeholder-slate-100 resize-none overflow-hidden" 
+                          placeholder="Digite seu texto profissional aqui..." value={item.value} 
+                          onChange={(e) => updateItem(page.id, item.id, e.target.value)}
+                          onInput={(e) => { (e.target as any).style.height = 'auto'; (e.target as any).style.height = (e.target as any).scrollHeight + 'px'; }}
+                          disabled={isLocked}
+                        />
+                      ) : (
+                        <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-sm border-l-4 border-[#2b579a] my-2 print:bg-transparent print:p-0 print:border-none">
+                          <MotorIcon />
+                          <div className="flex items-center gap-8">
+                            <div className="flex flex-col">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase">Equipamento</span>
+                              <select 
+                                className="text-sm font-bold bg-transparent border-none p-0 focus:outline-none cursor-pointer text-slate-800"
+                                value={item.value} onChange={(e) => updateItem(page.id, item.id, e.target.value)} disabled={isLocked}
+                              >
+                                {WEG_MOTORS.map(m => <option key={m.cv} value={m.cv}>{m.cv} CV - Trifásico 380V</option>)}
+                              </select>
+                            </div>
+                            {(() => {
+                              const motor = getMotorByCv(parseFloat(item.value));
+                              if (!motor) return null;
+                              const dim = calculateDimensioning(motor);
                               return (
-                                <div key={idx} className="grid grid-cols-5 gap-2 text-center border-b border-slate-50 pb-2">
-                                  <div className="flex flex-col items-start"><span className="text-[8px] font-bold text-slate-400">Potência</span><span className="text-sm font-bold">{m.cv} CV</span></div>
-                                  <div className="flex flex-col"><span className="text-[8px] font-bold text-slate-400">In (A)</span><span className="text-sm font-bold">{m.currentIn} A</span></div>
-                                  <div className="flex flex-col"><span className="text-[8px] font-bold text-slate-400">Disjuntor</span><span className="text-sm font-bold">{dim.circuitBreaker}</span></div>
-                                  <div className="flex flex-col"><span className="text-[8px] font-bold text-slate-400">Cabo</span><span className="text-sm font-bold text-blue-700">{dim.cableSize}</span></div>
-                                  <div className="flex flex-col"><span className="text-[8px] font-bold text-slate-400">Partida</span><span className="text-sm font-bold">{dim.softStarter || dim.contactor}</span></div>
+                                <div className="flex items-center gap-6 text-[11px] font-medium border-l border-slate-200 pl-6">
+                                  <div className="flex flex-col"><span className="text-[8px] text-slate-300 uppercase">Disjuntor</span><span className="text-slate-600 font-bold">{dim.circuitBreaker.split('(')[0]}</span></div>
+                                  <div className="flex flex-col"><span className="text-[8px] text-slate-300 uppercase">Cabo</span><span className="text-blue-700 font-bold">{dim.cableSize}</span></div>
+                                  <div className="flex flex-col"><span className="text-[8px] text-slate-300 uppercase">Contator</span><span className="text-slate-600">{dim.contactor.split('(')[0]}</span></div>
                                 </div>
                               );
-                            })}
-                          </div>
-                          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-900 text-sm font-bold">
-                            <div className="flex justify-between uppercase"><span>Potência Total:</span><span>{summary.totalCv} CV</span></div>
-                            <div className="flex justify-between uppercase text-blue-700"><span>Proteção Geral:</span><span>{summary.recommendedMainBreaker}</span></div>
+                            })()}
                           </div>
                         </div>
-                      </div>
-                    );
-                  }
-                  return null;
-                })
-              )}
-            </div>
+                      )}
+                    </div>
+                  ))}
 
-            <footer className="mt-auto pt-6 text-right italic text-slate-400 text-sm">
-              Emitido em: {currentDate} | CAMPO FORTE ENGENHARIA
-            </footer>
-          </div>
-        ))}
+                  {page.type === 'materials' && (
+                    <textarea 
+                      className="w-full flex-1 text-[13pt] leading-[2] bg-transparent border-none focus:outline-none placeholder-slate-100 resize-none font-medium" 
+                      placeholder="Relacione os materiais da instalação aqui..." value={page.text}
+                      onChange={(e) => setPages(pages.map(p => p.id === page.id ? { ...p, text: e.target.value } : p))}
+                      disabled={isLocked}
+                    />
+                  )}
+
+                  {page.type === 'summary' && (
+                    <div className="flex flex-col gap-8">
+                      {(() => {
+                        const allMotors = pages.flatMap(p => p.content).filter(i => i.type === 'motor').map(i => getMotorByCv(parseFloat(i.value))).filter((m): m is WegMotorData => !!m);
+                        const summary = calculateGeneralSummary(allMotors);
+                        return (
+                          <>
+                            <div className="border border-slate-800">
+                              <table className="w-full text-[10px] border-collapse">
+                                <thead className="bg-slate-800 text-white uppercase tracking-wider">
+                                  <tr>
+                                    <th className="p-3 border border-slate-600 text-left">Motor</th>
+                                    <th className="p-3 border border-slate-600">In (A)</th>
+                                    <th className="p-3 border border-slate-600">Ip (A)</th>
+                                    <th className="p-3 border border-slate-600">Disj. Motor</th>
+                                    <th className="p-3 border border-slate-600 text-blue-200">Cabo (mm²)</th>
+                                    <th className="p-3 border border-slate-600">Partida</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {allMotors.map((m, idx) => {
+                                    const dim = calculateDimensioning(m);
+                                    const ip = (m.currentIn * (m.cv >= 5 ? 3.5 : 7.5)).toFixed(1);
+                                    return (
+                                      <tr key={idx} className="border-b border-slate-100 text-center font-bold text-slate-800">
+                                        <td className="p-3 text-left">{m.cv} CV</td>
+                                        <td className="p-3">{m.currentIn}A</td>
+                                        <td className="p-3 text-red-600">{ip}A</td>
+                                        <td className="p-3">{dim.circuitBreaker.split('(')[0]}</td>
+                                        <td className="p-3 text-blue-800">{dim.cableSize}</td>
+                                        <td className="p-3">{dim.softStarter || "DIRETA"}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                            <div className="grid grid-cols-2 gap-8 border-t-2 border-slate-900 pt-6">
+                              <div className="space-y-2">
+                                <h4 className="text-[11px] font-black uppercase text-slate-400">Dados da Instalação</h4>
+                                <div className="flex justify-between text-sm"><span>Capacidade Total:</span><span className="font-bold">{summary.totalCv} CV ({summary.totalKw} kW)</span></div>
+                                <div className="flex justify-between text-sm"><span>Carga Nominal (In):</span><span className="font-bold">{summary.totalIn} A</span></div>
+                                <div className="flex justify-between text-sm text-red-600 italic"><span>Demanda de Partida:</span><span className="font-bold">{summary.totalIp.toFixed(1)} A</span></div>
+                              </div>
+                              <div className="bg-slate-800 text-white p-4 flex flex-col items-center justify-center rounded">
+                                <span className="text-[9px] uppercase font-bold opacity-60 mb-2">Proteção Geral Recomendada</span>
+                                <span className="text-3xl font-black">{summary.recommendedMainBreaker}</span>
+                              </div>
+                            </div>
+                            <div className="p-4 bg-slate-50 border border-slate-200 text-[10px] leading-relaxed italic text-slate-500">
+                              Nota: Dimensionamento realizado conforme NBR 5410:2004. Tensão de linha: 380V Trifásico. 
+                              Condutores instalados em eletrodutos aparentes conforme método B1.
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer (Word Footer Style) */}
+                <footer className="mt-auto pt-6 border-t border-slate-100 flex justify-between text-[9px] font-bold text-slate-300 uppercase tracking-widest">
+                  <div>Documento Técnico Profissional | Campo Forte</div>
+                  <div className="text-slate-400">Pág. {pIdx + 1} de {pages.length}</div>
+                </footer>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <style>{`
         textarea::placeholder { color: #f1f5f9; }
         @media print {
-          body { background: white !important; padding: 0 !important; }
+          body { background: white !important; }
           .no-print { display: none !important; }
-          .shadow-2xl { box-shadow: none !important; }
-          .mt-6 { margin-top: 0 !important; }
-          .bg-slate-300 { background: white !important; }
+          .shadow-[0_0_15px_rgba(0,0,0,0.15)] { box-shadow: none !important; }
+          .border { border: none !important; }
+          .py-10 { padding: 0 !important; }
+          .bg-[#f3f2f1] { background: white !important; }
+          #root { width: 100% !important; }
+          .w-[210mm] { width: 100% !important; border: none !important; }
         }
+        /* Ocultar barra de rolagem mas manter funcionalidade */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f3f2f1; }
+        ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #bbb; }
       `}</style>
     </div>
   );
