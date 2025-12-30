@@ -1,0 +1,7 @@
+{
+  "name": "CAMPO FORTE",
+  "description": "Dimensionamento técnico de motores WEG com sugestão de Soft-Starter e cálculo de carga consolidado.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
