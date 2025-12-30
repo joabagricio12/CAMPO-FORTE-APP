@@ -21,14 +21,14 @@ const CABLE_CAPACITY = [
 
 export const calculateDimensioning = (motor: WegMotorData): DimensioningResult => {
   const In = motor.currentIn;
-  const distance = 100; 
+  const distance = 100;
   const voltage = 380;
-  const maxDeltaV = 4; 
+  const maxDeltaV = 4;
 
   const requiredIz = In * 1.25;
   let selectedCable = CABLE_CAPACITY.find(c => c.amp >= requiredIz) || CABLE_CAPACITY[CABLE_CAPACITY.length - 1];
 
-  const rho = 0.021; 
+  const rho = 0.021;
   const deltaVVolts = (maxDeltaV / 100) * voltage;
   const minSectionVoltageDrop = (Math.sqrt(3) * distance * In * rho) / deltaVVolts;
   
@@ -73,7 +73,7 @@ export const calculateDimensioning = (motor: WegMotorData): DimensioningResult =
     protType = "Disjuntor-Motor";
   } else {
     const breakerIn = Math.ceil(In * 1.4 / 10) * 10;
-    breaker = `Caixa Moldada DWA ${breakerIn}A`;
+    breaker = `DWA ${breakerIn}A`;
     protType = "Proteção Termomagnética";
   }
 
