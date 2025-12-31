@@ -18,46 +18,30 @@ export interface DimensioningResult {
   contactor: string;
   protectionType: string;
   softStarter?: string;
-  inverter?: string;
-}
-
-export interface ComparisonData {
-  before: { 
-    cv: number; 
-    cable: string;
-    breaker: string;
-    starter: string;
-  };
-  after: { 
-    cv: number; 
-  };
 }
 
 export interface BlockData {
   id: string;
-  type: 'text' | 'comparison' | 'summary_table';
-  value: string | ComparisonData;
+  type: 'text' | 'motor';
+  value: string;
   fontSize: number;
   bold?: boolean;
   italic?: boolean;
   align?: 'left' | 'center' | 'right' | 'justify';
 }
 
-export interface PageData {
-  id: string;
-  blocks: BlockData[];
-}
-
 export interface ProjectData {
   title: string;
-  pages: PageData[];
+  blocks: BlockData[];
 }
 
 export interface ProjectSummary {
   motorCount: number;
+  motorList: { cv: number; count: number }[];
   totalCv: number;
   totalKw: number;
   totalIn: number;
+  totalIp: number;
   recommendedMainBreaker: string;
-  details: DimensioningResult[];
+  softStarterCount: number;
 }
