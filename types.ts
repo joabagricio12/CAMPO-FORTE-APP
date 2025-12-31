@@ -22,13 +22,19 @@ export interface DimensioningResult {
 }
 
 export interface ComparisonData {
-  before: { cv: number; cable: string };
-  after: { cv: number };
+  before: { 
+    cv: number; 
+    cable: string;
+    breaker: string;
+  };
+  after: { 
+    cv: number; 
+  };
 }
 
 export interface BlockData {
   id: string;
-  type: 'text' | 'comparison';
+  type: 'text' | 'comparison' | 'summary_table';
   value: string | ComparisonData;
   fontSize: number;
   bold?: boolean;
@@ -52,4 +58,5 @@ export interface ProjectSummary {
   totalKw: number;
   totalIn: number;
   recommendedMainBreaker: string;
+  details: DimensioningResult[];
 }
