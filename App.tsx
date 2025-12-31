@@ -6,39 +6,46 @@ import { calculateDimensioning, calculateGeneralSummary } from './calculations';
 import { GoogleGenAI } from "@google/genai";
 
 const MotorIcon = () => (
-  <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-10 h-10 text-[#005792]">
-    <rect x="12" y="24" width="32" height="20" rx="1" stroke="currentColor" strokeWidth="3" fill="white"/>
-    <rect x="44" y="30" width="6" height="8" rx="1" fill="currentColor"/>
-    <circle cx="28" cy="34" r="5" stroke="currentColor" strokeWidth="2" fill="#f0f9ff"/>
+  <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-[#005792] shrink-0">
+    {/* Aletas do Motor */}
+    <rect x="18" y="24" width="28" height="16" rx="1" fill="white" stroke="currentColor" strokeWidth="1.5"/>
+    <path d="M22 24v16M26 24v16M30 24v16M34 24v16M38 24v16M42 24v16" stroke="currentColor" strokeWidth="0.5" strokeOpacity="0.4"/>
+    {/* Caixa de Ligação */}
+    <rect x="24" y="20" width="16" height="4" rx="1" fill="currentColor"/>
+    {/* Eixo e Ventilador */}
+    <rect x="46" y="28" width="4" height="8" rx="1" fill="currentColor"/>
+    <path d="M14 26v12M12 28v8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+    {/* Base/Pés */}
+    <path d="M18 40l-2 3M46 40l2 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
   </svg>
 );
 
 const App: React.FC = () => {
   const [project, setProject] = useState<ProjectData>(() => {
-    const saved = localStorage.getItem('cf_word_v11');
+    const saved = localStorage.getItem('cf_ultimate_v1');
     return saved ? JSON.parse(saved) : {
       title: 'Projeto Campo Forte',
       blocks: [
-        { id: 'b1', type: 'text', value: 'MEMORIAL DESCRITIVO DE ENGENHARIA ELÉTRICA', fontSize: 20, bold: true, align: 'center' },
-        { id: 'b2', type: 'text', value: 'Digite aqui a introdução técnica do seu projeto...', fontSize: 13, align: 'justify' }
+        { id: 'b1', type: 'text', value: 'MEMORIAL DESCRITIVO DE INSTALAÇÃO', fontSize: 14, bold: true, align: 'center' },
+        { id: 'b2', type: 'text', value: 'Introdução técnica do sistema...', fontSize: 12, align: 'justify' }
       ]
     };
   });
 
-  const [headerImage, setHeaderImage] = useState<string | null>(() => localStorage.getItem('cf_logo_v11'));
+  const [headerImage, setHeaderImage] = useState<string | null>(() => localStorage.getItem('cf_logo_v12'));
   const [isLocked, setIsLocked] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
 
-  useEffect(() => { localStorage.setItem('cf_word_v11', JSON.stringify(project)); }, [project]);
-  useEffect(() => { if (headerImage) localStorage.setItem('cf_logo_v11', headerImage); }, [headerImage]);
+  useEffect(() => { localStorage.setItem('cf_ultimate_v1', JSON.stringify(project)); }, [project]);
+  useEffect(() => { if (headerImage) localStorage.setItem('cf_logo_v12', headerImage); }, [headerImage]);
 
   const addBlock = (type: 'text' | 'motor') => {
     const newBlock: BlockData = {
       id: Math.random().toString(36).substr(2, 9),
       type,
       value: type === 'motor' ? '1' : '',
-      fontSize: 14,
+      fontSize: 12,
       align: 'left'
     };
     
@@ -55,18 +62,18 @@ const App: React.FC = () => {
   };
 
   const updateBlock = (blockId: string, updates: Partial<BlockData>) => {
-    setProject({
-      ...project,
-      blocks: project.blocks.map(b => b.id === blockId ? { ...b, ...updates } : b)
-    });
+    setProject(prev => ({
+      ...prev,
+      blocks: prev.blocks.map(b => b.id === blockId ? { ...b, ...updates } : b)
+    }));
   };
 
   const removeBlock = (blockId: string) => {
     if (project.blocks.length <= 1) return;
-    setProject({
-      ...project,
-      blocks: project.blocks.filter(b => b.id !== blockId)
-    });
+    setProject(prev => ({
+      ...prev,
+      blocks: prev.blocks.filter(b => b.id !== blockId)
+    }));
     setActiveBlockId(null);
   };
 
@@ -77,7 +84,7 @@ const App: React.FC = () => {
     const target = dir === 'up' ? idx - 1 : idx + 1;
     if (target < 0 || target >= newBlocks.length) return;
     [newBlocks[idx], newBlocks[target]] = [newBlocks[target], newBlocks[idx]];
-    setProject({ ...project, blocks: newBlocks });
+    setProject(prev => ({ ...prev, blocks: newBlocks }));
   };
 
   const generateAI = async () => {
@@ -87,25 +94,33 @@ const App: React.FC = () => {
       .map(b => getMotorByCv(parseFloat(b.value)))
       .filter((m): m is WegMotorData => !!m);
 
-    if (motors.length === 0) return alert("Adicione motores para a IA analisar.");
+    if (motors.length === 0) return alert("Adicione motores para a análise da IA.");
     
     setIsGenerating(true);
     try {
       const summary = calculateGeneralSummary(motors);
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Como Engenheiro Sênior da Campo Forte, escreva um parágrafo técnico sobre um projeto com ${summary.motorCount} motores WEG IE3 (${summary.totalCv}CV totais). Cite o disjuntor geral de ${summary.recommendedMainBreaker}. Seja formal.`;
+      const prompt = `Gere uma CONCLUSÃO TÉCNICA final para este memorial. O projeto possui ${summary.motorCount} motores totais, somando ${summary.totalCv}CV. A corrente nominal de barramento é de aproximadamente ${summary.totalIn}A. Indique obrigatoriamente um ${summary.recommendedMainBreaker}. Use linguagem de Engenharia Sênior, seja direto e profissional. Não use saudações.`;
       
       const res = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: prompt,
-        config: { systemInstruction: "Você é um Engenheiro Eletricista Sênior. Produza textos puramente técnicos para memoriais descritivos." }
+        config: { systemInstruction: "Você é um Engenheiro da Campo Forte. Produza apenas o texto técnico final de fechamento do relatório." }
       });
 
-      const newBlock: BlockData = { id: 'ai-' + Date.now(), type: 'text', value: res.text || '', fontSize: 13, align: 'justify' };
-      setProject({ ...project, blocks: [...project.blocks, newBlock] });
+      const newBlock: BlockData = { 
+        id: 'ai-' + Date.now(), 
+        type: 'text', 
+        value: `CONCLUSÃO TÉCNICA:\n\n${res.text || 'Falha ao gerar resumo.'}`, 
+        fontSize: 12, 
+        bold: true, 
+        align: 'justify' 
+      };
+      
+      setProject(prev => ({ ...prev, blocks: [...prev.blocks, newBlock] }));
       setActiveBlockId(newBlock.id);
     } catch (e) {
-      alert("Erro na IA.");
+      alert("Erro na IA: Verifique sua chave API.");
     } finally {
       setIsGenerating(false);
     }
@@ -114,100 +129,78 @@ const App: React.FC = () => {
   const activeBlock = project.blocks.find(b => b.id === activeBlockId);
 
   return (
-    <div className="min-h-screen bg-[#e2e8f0] flex flex-col items-center">
+    <div className="min-h-screen bg-slate-100 flex flex-col items-center">
       
-      {/* TOOLBAR ESTILO OFFICE (FIXA) */}
-      <div className="fixed top-0 left-0 w-full h-14 bg-[#1e293b] shadow-2xl z-[9999] no-print flex items-center justify-between px-8 border-b border-slate-700">
-        <div className="flex items-center gap-6">
-          <span className="text-white font-black text-xl tracking-tighter">CAMPO FORTE</span>
-          
-          <div className="h-8 w-px bg-slate-700"></div>
-
-          <div className="flex bg-slate-800 rounded p-1 gap-1">
-            <button onClick={() => addBlock('text')} className="toolbar-btn" title="Novo Texto">TEXTO</button>
-            <button onClick={() => addBlock('motor')} className="toolbar-btn" title="Inserir Motor">MOTOR</button>
-          </div>
-
-          <div className="flex items-center gap-1">
-            <button onClick={() => updateBlock(activeBlockId!, { fontSize: (activeBlock?.fontSize || 14) + 1 })} className="format-btn">A+</button>
-            <button onClick={() => updateBlock(activeBlockId!, { fontSize: Math.max(8, (activeBlock?.fontSize || 14) - 1) })} className="format-btn">A-</button>
-            <button onClick={() => updateBlock(activeBlockId!, { bold: !activeBlock?.bold })} className={`format-btn font-bold ${activeBlock?.bold ? 'bg-blue-600 text-white' : ''}`}>B</button>
-            <button onClick={() => updateBlock(activeBlockId!, { italic: !activeBlock?.italic })} className={`format-btn italic ${activeBlock?.italic ? 'bg-blue-600 text-white' : ''}`}>I</button>
-          </div>
-
-          <div className="flex bg-slate-800 rounded p-1 gap-1">
-            <button onClick={() => updateBlock(activeBlockId!, { align: 'left' })} className={`format-btn px-2 ${activeBlock?.align === 'left' ? 'bg-blue-600' : ''}`}>⇤</button>
-            <button onClick={() => updateBlock(activeBlockId!, { align: 'center' })} className={`format-btn px-2 ${activeBlock?.align === 'center' ? 'bg-blue-600' : ''}`}>↔</button>
-            <button onClick={() => updateBlock(activeBlockId!, { align: 'right' })} className={`format-btn px-2 ${activeBlock?.align === 'right' ? 'bg-blue-600' : ''}`}>⇥</button>
-            <button onClick={() => updateBlock(activeBlockId!, { align: 'justify' })} className={`format-btn px-2 ${activeBlock?.align === 'justify' ? 'bg-blue-600' : ''}`}>≡</button>
-          </div>
+      {/* BARRA DE FERRAMENTAS COMPACTA */}
+      <div className="fixed top-0 left-0 w-full h-10 bg-[#0f172a] shadow-lg z-[9999] no-print flex items-center justify-between px-2 border-b border-slate-800">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+          <span className="text-white font-black text-[10px] tracking-tight shrink-0 mr-1">CAMPO FORTE</span>
+          <button onClick={() => addBlock('text')} className="tool-btn">T</button>
+          <button onClick={() => addBlock('motor')} className="tool-btn">⚙️</button>
+          <button onClick={() => updateBlock(activeBlockId!, { bold: !activeBlock?.bold })} className={`tool-btn ${activeBlock?.bold ? 'bg-blue-600' : ''}`}>B</button>
+          <button onClick={() => updateBlock(activeBlockId!, { align: 'justify' })} className="tool-btn">≡</button>
         </div>
-
-        <div className="flex items-center gap-3">
-          <button onClick={generateAI} disabled={isGenerating} className="action-btn bg-blue-600">
-            {isGenerating ? 'PROCESSANDO...' : 'IA TÉCNICA'}
-          </button>
-          <button onClick={() => window.print()} className="action-btn bg-white text-slate-900">GERAR PDF</button>
-          <button onClick={() => setIsLocked(!isLocked)} className={`action-btn ${isLocked ? 'bg-red-500' : 'bg-green-600'}`}>
-            {isLocked ? 'VISUALIZAR' : 'EDITAR'}
-          </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <button onClick={generateAI} disabled={isGenerating} className="action-btn bg-blue-600">{isGenerating ? '...' : 'IA RESUMO'}</button>
+          <button onClick={() => window.print()} className="action-btn bg-white text-black">PDF</button>
+          <button onClick={() => setIsLocked(!isLocked)} className={`action-btn ${isLocked ? 'bg-red-500' : 'bg-green-600'}`}>{isLocked ? '🔓' : '🔒'}</button>
         </div>
       </div>
 
-      {/* ÁREA DO DOCUMENTO A4 */}
-      <div className="mt-20 mb-20">
-        <div className="bg-white w-[210mm] min-h-[297mm] shadow-2xl p-[25mm] pt-[45mm] pb-[30mm] relative flex flex-col border border-slate-300 print:shadow-none print:border-none print:m-0">
+      {/* DOCUMENTO ADAPTATIVO */}
+      <div className="mt-10 mb-10 w-full max-w-4xl px-0 md:px-4">
+        <div className="bg-white min-h-[297mm] shadow-xl relative flex flex-col p-4 md:p-12 print:p-0 print:shadow-none w-full border-x border-slate-200">
           
-          {/* LOGO CENTRALIZADA */}
-          <div className="absolute top-[12mm] left-0 w-full flex justify-center no-print-img">
+          {/* LOGO - POSIÇÃO SUPERIOR OTIMIZADA */}
+          <div className="w-full flex justify-center mb-4 no-print-img">
             {headerImage ? (
               <img 
                 src={headerImage} 
-                className="max-h-[22mm] cursor-pointer" 
-                onClick={() => !isLocked && document.getElementById('logo-upload')?.click()}
+                className="max-h-12 cursor-pointer transition active:scale-95" 
+                onClick={() => !isLocked && document.getElementById('logo-file')?.click()}
               />
             ) : (
               !isLocked && (
                 <button 
-                  onClick={() => document.getElementById('logo-upload')?.click()}
-                  className="text-[10px] font-bold text-slate-300 border-2 border-dashed border-slate-100 px-12 py-3 rounded-lg hover:border-blue-200 transition"
-                >CLIQUE PARA ADICIONAR LOGOMARCA DO PROJETO</button>
+                  onClick={() => document.getElementById('logo-file')?.click()}
+                  className="text-[10px] font-bold text-slate-300 border border-dashed border-slate-200 px-8 py-2 rounded-md"
+                >LOGOMARCA</button>
               )
             )}
-            <input type="file" id="logo-upload" className="hidden" accept="image/*" onChange={(e) => {
+            <input type="file" id="logo-file" className="hidden" accept="image/*" onChange={(e) => {
               const f = e.target.files?.[0];
               if(f){ const r = new FileReader(); r.onloadend = () => setHeaderImage(r.result as string); r.readAsDataURL(f); }
             }} />
           </div>
 
-          {/* FLUXO DE TEXTO E MOTORES */}
+          {/* FLUXO TÉCNICO DE ALTA DENSIDADE */}
           <div className="flex flex-col w-full flex-1">
             {project.blocks.map((block) => (
               <div 
                 key={block.id}
-                className={`relative mb-2 group/block transition-all rounded-md ${activeBlockId === block.id && !isLocked ? 'bg-blue-50/30 ring-1 ring-blue-100' : ''}`}
+                className={`relative group/block transition-all border-l ${activeBlockId === block.id && !isLocked ? 'border-blue-400 bg-blue-50/10' : 'border-transparent'}`}
                 onClick={() => !isLocked && setActiveBlockId(block.id)}
               >
-                {/* CONTROLES DE FLUXO (NO-PRINT) */}
+                {/* CONTROLES RÁPIDOS */}
                 {!isLocked && activeBlockId === block.id && (
-                  <div className="absolute -left-12 top-0 flex flex-col gap-1 no-print">
-                    <button onClick={(e) => { e.stopPropagation(); moveBlock(block.id, 'up'); }} className="ctrl-btn">↑</button>
-                    <button onClick={(e) => { e.stopPropagation(); moveBlock(block.id, 'down'); }} className="ctrl-btn">↓</button>
-                    <button onClick={(e) => { e.stopPropagation(); removeBlock(block.id); }} className="ctrl-btn text-red-500">×</button>
+                  <div className="absolute -right-2 top-0 flex flex-col gap-0.5 no-print z-[100]">
+                    <button onClick={(e) => { e.stopPropagation(); moveBlock(block.id, 'up'); }} className="float-btn">↑</button>
+                    <button onClick={(e) => { e.stopPropagation(); removeBlock(block.id); }} className="float-btn text-red-500">×</button>
                   </div>
                 )}
 
                 {block.type === 'text' ? (
                   <textarea
-                    className="w-full bg-transparent border-none outline-none resize-none overflow-hidden placeholder:text-slate-100 leading-relaxed text-slate-900"
+                    className="w-full bg-transparent border-none outline-none resize-none overflow-hidden text-slate-900 placeholder:text-slate-100 leading-[1.3]"
                     style={{
                       fontSize: `${block.fontSize}px`,
                       fontWeight: block.bold ? 'bold' : 'normal',
                       fontStyle: block.italic ? 'italic' : 'normal',
                       textAlign: block.align,
-                      minHeight: '1.5em'
+                      minHeight: '1em',
+                      padding: '2px 0'
                     }}
-                    placeholder="Inicie a redação do memorial..."
+                    placeholder="..."
                     value={block.value}
                     onChange={(e) => {
                       updateBlock(block.id, { value: e.target.value });
@@ -221,40 +214,25 @@ const App: React.FC = () => {
                     disabled={isLocked}
                   />
                 ) : (
-                  /* WIDGET MOTOR TÉCNICO SIMPLIFICADO */
-                  <div className="my-6 border-y border-slate-100 py-6 bg-[#fcfdfe] rounded-xl px-8 flex items-center justify-between shadow-sm">
-                    <div className="flex items-center gap-6">
+                  /* WIDGET MOTOR SLIM - TAMANHO DE LINHA WORD */
+                  <div className="flex items-center justify-between border-b border-slate-50 py-0.5 px-1 hover:bg-slate-50 transition min-h-[24px]">
+                    <div className="flex items-center gap-2 shrink-0">
                       <MotorIcon />
-                      <div className="flex flex-col">
-                        <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">MOTOR</span>
-                        <select
-                          className="text-xl font-black bg-transparent border-none outline-none cursor-pointer text-[#005792] p-0"
-                          value={block.value}
-                          onChange={(e) => updateBlock(block.id, { value: e.target.value })}
-                          disabled={isLocked}
-                        >
-                          {WEG_MOTORS.map(m => <option key={m.cv} value={m.cv}>{m.cv} CV | Trifásico W22</option>)}
-                        </select>
-                      </div>
+                      <select
+                        className="text-[12px] font-black bg-transparent border-none outline-none cursor-pointer text-[#005792] p-0 focus:ring-0"
+                        value={block.value}
+                        onChange={(e) => updateBlock(block.id, { value: e.target.value })}
+                        disabled={isLocked}
+                      >
+                        {WEG_MOTORS.map(m => <option key={m.cv} value={m.cv}>{m.cv} CV</option>)}
+                      </select>
                     </div>
 
-                    <div className="flex gap-10 border-l border-slate-100 pl-10">
-                      <div className="flex flex-col text-center">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase mb-1">Potência</span>
-                        <span className="text-sm font-black text-slate-700">{(parseFloat(block.value) * 0.735).toFixed(2)} kW</span>
-                      </div>
-                      <div className="flex flex-col text-center">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase mb-1">Corrente (In)</span>
-                        <span className="text-sm font-black text-slate-700">{getMotorByCv(parseFloat(block.value))?.currentIn} A</span>
-                      </div>
-                      <div className="flex flex-col text-center">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase mb-1">Cabo Mínimo</span>
-                        <span className="text-sm font-black text-[#005792]">{calculateDimensioning(getMotorByCv(parseFloat(block.value))!).cableSize}</span>
-                      </div>
-                      <div className="flex flex-col text-center">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase mb-1">Disjuntor</span>
-                        <span className="text-sm font-black text-slate-700">{calculateDimensioning(getMotorByCv(parseFloat(block.value))!).circuitBreaker.split(' (')[0]}</span>
-                      </div>
+                    <div className="flex flex-1 justify-end gap-3 md:gap-8 items-center text-[10px] md:text-[11px] font-semibold text-slate-400 overflow-hidden">
+                      <span className="shrink-0"><b className="text-slate-700">{(parseFloat(block.value) * 0.735).toFixed(2)}</b>kW</span>
+                      <span className="shrink-0"><b className="text-slate-700">{getMotorByCv(parseFloat(block.value))?.currentIn}</b>A</span>
+                      <span className="shrink-0 text-[#005792] font-black">{calculateDimensioning(getMotorByCv(parseFloat(block.value))!).cableSize}</span>
+                      <span className="shrink-0 bg-slate-100 px-1 rounded text-slate-900 font-black">{calculateDimensioning(getMotorByCv(parseFloat(block.value))!).circuitBreaker.split(' (')[0]}</span>
                     </div>
                   </div>
                 )}
@@ -262,67 +240,58 @@ const App: React.FC = () => {
             ))}
           </div>
 
-          {/* RODAPÉ DO MEMORIAL */}
-          <div className="mt-12 border-t border-slate-100 pt-6 flex justify-between items-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
-            <span>MEMORIAL DESCRITIVO TÉCNICO</span>
-            <span>CAMPO FORTE ENGENHARIA</span>
-          </div>
+          <div className="h-6"></div>
         </div>
       </div>
 
       <style>{`
-        .toolbar-btn {
+        .tool-btn {
           color: white;
-          padding: 4px 12px;
-          border-radius: 4px;
-          font-weight: 900;
-          font-size: 11px;
-          transition: 0.2s;
-        }
-        .toolbar-btn:hover { background-color: #334155; }
-        
-        .format-btn {
-          color: #94a3b8;
-          padding: 6px 10px;
-          border-radius: 4px;
-          font-weight: 800;
-          font-size: 12px;
-          transition: 0.15s;
-        }
-        .format-btn:hover { color: white; background-color: #334155; }
-        
-        .action-btn {
-          padding: 8px 18px;
-          border-radius: 6px;
-          font-weight: 900;
-          font-size: 10px;
-          text-transform: uppercase;
-          letter-spacing: 1px;
-          transition: 0.2s;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        
-        .ctrl-btn {
-          background-color: white;
-          width: 32px;
-          height: 32px;
-          border-radius: 6px;
-          border: 1px solid #e2e8f0;
-          font-weight: 900;
-          font-size: 14px;
+          width: 28px;
+          height: 28px;
           display: flex;
           align-items: center;
           justify-content: center;
-          transition: 0.2s;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+          font-weight: 900;
+          font-size: 12px;
+          border-radius: 4px;
+          transition: 0.1s;
         }
-        .ctrl-btn:hover { background-color: #f8fafc; transform: scale(1.1); color: #005792; }
+        .tool-btn:hover { background-color: #334155; }
+        
+        .action-btn {
+          padding: 3px 10px;
+          border-radius: 4px;
+          font-weight: 900;
+          font-size: 9px;
+          text-transform: uppercase;
+          transition: 0.2s;
+        }
+        
+        .float-btn {
+          background-color: white;
+          width: 22px;
+          height: 22px;
+          border: 1px solid #e2e8f0;
+          font-weight: 900;
+          font-size: 10px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          border-radius: 2px;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
         @media print {
-          body { background: white !important; margin: 0 !important; }
-          .min-h-[297mm] { box-shadow: none !important; margin: 0 !important; border: none !important; width: 100% !important; }
           .no-print, .no-print-img { display: none !important; }
-          textarea { overflow: visible !important; height: auto !important; width: 100% !important; }
+          body { background: white !important; padding: 0 !important; }
+          .max-w-4xl { max-width: 100% !important; width: 100% !important; margin: 0 !important; }
+          .min-h-[297mm] { box-shadow: none !important; border: none !important; padding: 0 !important; }
+          textarea { overflow: visible !important; height: auto !important; }
+          select { -webkit-appearance: none; -moz-appearance: none; appearance: none; border: none; }
         }
         
         textarea { scrollbar-width: none; }
