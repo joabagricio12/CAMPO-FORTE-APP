@@ -11,14 +11,14 @@ const CABLE_CAPACITY = [
 
 export const calculateDimensioning = (motor: WegMotorData): DimensioningResult => {
   const In = motor.currentIn;
-  const distance = 80; 
+  const distance = 50; // Padrão 50m para cálculo de queda
   const voltage = 380;
   
   const requiredIz = In * 1.25;
   let selectedCable = CABLE_CAPACITY.find(c => c.amp >= requiredIz) || CABLE_CAPACITY[CABLE_CAPACITY.length - 1];
 
   const rho = 0.021; 
-  const deltaVPermissible = (4 / 100) * voltage;
+  const deltaVPermissible = (3 / 100) * voltage; // Queda 3%
   const minSectionDeltaV = (Math.sqrt(3) * distance * In * rho) / deltaVPermissible;
   
   if (selectedCable.size < minSectionDeltaV) {
@@ -31,26 +31,22 @@ export const calculateDimensioning = (motor: WegMotorData): DimensioningResult =
   let breaker = "";
   let vfd = undefined;
 
-  // Lógica técnica de Inversores/Softstarters
-  if (motor.cv >= 2) {
-    if (In <= 13) vfd = "CFW500-A (13A, IP20, Filtro RFI Integrado)";
-    else if (In <= 24) vfd = "CFW500-B (24A, IP20, Controle Vetorial)";
-    else if (In <= 45) vfd = "CFW11 (45A, Heavy Duty, PLC Integrado)";
-    else vfd = "CFW11 G2 (Alta Performance Industrial)";
+  if (motor.cv >= 3) {
+    vfd = In <= 24 ? "Inversor CFW500" : "Inversor CFW11";
   }
 
   if (motor.cv <= 40) {
-    breaker = `Disjuntor-Motor MPW40 (Ajuste: ${(In * 0.9).toFixed(1)}A a ${(In * 1.15).toFixed(1)}A)`;
+    breaker = `MPW40 (${(In * 1.1).toFixed(1)}A)`;
   } else {
-    breaker = `Disjuntor DWA ${Math.ceil(In * 1.3 / 10) * 10}A (Cap. Ruptura 35kA)`;
+    breaker = `DWA ${Math.ceil(In * 1.3 / 10) * 10}A`;
   }
 
   return {
     motor,
     circuitBreaker: breaker,
-    cableSize: `${selectedCable.size} mm² (Cobre)`,
-    contactor: `${contactor} (Bobina 220V AC)`,
-    protectionType: motor.cv > 40 ? "Termomagnética Industrial" : "Proteção Escalar Especializada",
+    cableSize: `${selectedCable.size} mm²`,
+    contactor: contactor,
+    protectionType: motor.cv > 40 ? "Industrial" : "Especializada",
     softStarter: vfd
   };
 };
@@ -61,10 +57,9 @@ export const calculateGeneralSummary = (motors: WegMotorData[]): ProjectSummary 
   const totalIn = motors.reduce((acc, m) => acc + m.currentIn, 0);
   
   const maxMotorIn = motors.length > 0 ? Math.max(...motors.map(m => m.currentIn)) : 0;
-  // Ip estimado = (Soma das correntes nominais - maior corrente) + (Maior corrente * 7)
-  const totalIp = (totalIn - maxMotorIn) + (maxMotorIn * 7); 
+  const totalIp = (totalIn - maxMotorIn) + (maxMotorIn * 7.5); 
 
-  const mainBreakerRating = [40, 50, 63, 80, 100, 125, 160, 200, 250, 400, 630, 800].find(r => r >= totalIn * 1.15) || 1000;
+  const mainBreaker = [40, 63, 100, 125, 160, 200, 250, 400, 630, 800].find(r => r >= totalIn * 1.2) || 1000;
 
   const motorList = Array.from(new Set(motors.map(m => m.cv))).map(cv => ({
     cv,
@@ -78,7 +73,7 @@ export const calculateGeneralSummary = (motors: WegMotorData[]): ProjectSummary 
     totalKw: parseFloat(totalKw.toFixed(2)),
     totalIn: parseFloat(totalIn.toFixed(2)),
     totalIp: parseFloat(totalIp.toFixed(2)),
-    recommendedMainBreaker: `DWA ${mainBreakerRating}A`,
-    softStarterCount: motors.filter(m => m.cv >= 2).length
+    recommendedMainBreaker: `Disjuntor Geral ${mainBreaker}A`,
+    softStarterCount: motors.filter(m => m.cv >= 3).length
   };
 };

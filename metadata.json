@@ -13,7 +13,5 @@
       "type": "image/png"
     }
   ],
-  "requestFramePermissions": [
-    "camera"
-  ]
+  "requestFramePermissions": []
 }
