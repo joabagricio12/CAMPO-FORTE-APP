@@ -26,6 +26,7 @@ export interface ComparisonData {
     cv: number; 
     cable: string;
     breaker: string;
+    starter: string;
   };
   after: { 
     cv: number; 
